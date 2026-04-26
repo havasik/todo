@@ -1,0 +1,24 @@
+# Stage 1: Build
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY backend/package.json backend/
+COPY shared/package.json shared/
+RUN npm ci --workspace=backend --workspace=shared --include-workspace-root
+COPY shared/ shared/
+COPY backend/ backend/
+RUN npm run build -w backend
+
+# Stage 2: Run
+FROM node:22-alpine
+WORKDIR /app
+COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/backend/package.json backend/
+COPY --from=build /app/shared/package.json shared/
+COPY --from=build /app/shared/src/ shared/src/
+RUN npm ci --workspace=backend --workspace=shared --include-workspace-root --omit=dev
+COPY --from=build /app/backend/dist/ backend/dist/
+COPY --from=build /app/backend/prisma/ backend/prisma/
+COPY --from=build /app/backend/prisma.config.ts backend/
+EXPOSE 3001
+CMD ["sh", "-c", "cd backend && npx prisma migrate deploy && cd .. && node backend/dist/server.js"]
